@@ -1,0 +1,80 @@
+import numpy as np 
+import pandas as pd
+
+books = pd.read_csv(r'D:\jupyternotebook\BookRecommendation\Books.csv', low_memory=False)
+ratings=pd.read_csv(r'D:\jupyternotebook\BookRecommendation\Ratings.csv')
+users=pd.read_csv(r'D:\jupyternotebook\BookRecommendation\Users.csv')
+
+print(books.head())
+print(ratings.head())
+print(users.head())
+
+print(books.shape)
+print(users.shape)
+print(ratings.shape)
+books.isnull().sum()
+users.isnull().sum()
+ratings.isnull().sum()
+books.duplicated().sum()
+users.duplicated().sum()
+ratings.duplicated().sum()
+#Popularity based recommendation system
+ratings_with_name=ratings.merge(books,on='ISBN')
+num_ratings_df=ratings_with_name.groupby('Book-Title').count()['Book-Rating'].reset_index()
+num_ratings_df.head()
+num_ratings_df.rename(columns={'Book-Rating': 'num-ratings'}, inplace=True)
+num_ratings_df.head()
+
+ratings_with_name['Book-Rating'] = pd.to_numeric(ratings_with_name['Book-Rating'], errors='coerce')
+ratings_with_name.head()
+avg_ratings_df = ratings_with_name.groupby('Book-Title')['Book-Rating'].mean().reset_index()
+avg_ratings_df.rename(columns={'Book-Rating': 'avg_ratings'}, inplace=True)
+num_ratings_df
+
+popular_df = pd.merge(num_ratings_df, avg_ratings_df, on='Book-Title')
+popular_df
+
+popular_df[popular_df['num-ratings']>=250].sort_values('avg_ratings',ascending=False).head(50)
+popular_df.merge(books,on='Book-Title').drop_duplicates('Book-Title')[['Book-Title','Book-Author','Image-URL-M','num-ratings','avg_ratings']]
+popular_df
+##Colabrative Filterings 
+x=ratings_with_name.groupby('User-ID').count()['Book-Rating']>200
+padhe_likhe=x[x].index
+filtered_ratings=ratings_with_name[ratings_with_name['User-ID'].isin(padhe_likhe)]
+y=filtered_ratings.groupby('Book-Title').count()['Book-Rating']>=50
+famous_books=y[y].index
+final_ratings=filtered_ratings[filtered_ratings['Book-Title'].isin(famous_books)]
+pt=final_ratings.pivot_table(index='Book-Title',columns='User-ID',values='Book-Rating')
+pt.fillna(0,inplace=True)
+from sklearn.metrics.pairwise import cosine_similarity
+similarity_scores=cosine_similarity(pt)
+similarity_scores.shape
+
+def recommend(book_name):
+    try:
+        # Find index of book_name in pt.index
+        index = np.where(pt.index == book_name)[0][0]
+    except IndexError:
+        return f"Book '{book_name}' not found in index."
+    
+    # Sort and select similar items
+    similar_items = sorted(list(enumerate(similarity_scores[index])), key=lambda x: x[1], reverse=True)[1:5]
+    
+    data = []
+    for i in similar_items:
+        item = []
+        temp_df = books[books['Book-Title'] == pt.index[i[0]]]
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Book-Title'].values))
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Book-Author'].values))
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Image-URL-M'].values))
+        
+        data.append(item)
+    
+    return data
+recommend('Life of Pi')
+
+import pickle
+
+pickle.dump(books, open('books.pkl', 'wb'))
+pickle.dump(pt, open('pt.pkl', 'wb'))
+pickle.dump(similarity_scores, open('similarity_scores.pkl', 'wb'))
